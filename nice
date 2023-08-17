@@ -1,0 +1,506 @@
+local TweenService = game:GetService('TweenService')
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local UIFolder = game:GetObjects("rbxassetid://14255032345")[1]
+local SmoothScroll = loadstring(UIFolder.SmoothScroll.Source)()
+local UI = {}
+
+function fixScrolling(scrollingFrame)
+	SmoothScroll.Enable(scrollingFrame, 10, 0.65)
+end
+
+function dragify(Frame)
+	local dragToggle = nil
+	local dragSpeed = 0.8
+	local dragInput = nil
+	local dragStart = nil
+	local dragPos = nil
+	local startPos = nil
+	local function updateInput(input)
+		local Delta = input.Position - dragStart
+		local Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + Delta.X, startPos.Y.Scale, startPos.Y.Offset + Delta.Y)
+		TweenService:Create(Frame, TweenInfo.new(dragSpeed/10), {Position = Position}):Play()
+	end
+	local dragableElements = {Frame["_"].TopBar, Frame["_"].LowerRightFrame, Frame["_"].LowerLeftFrame, Frame["_"].LeftFrame}
+	for _,frame in pairs(dragableElements) do
+		frame.InputBegan:Connect(function(input)
+			if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and UserInputService:GetFocusedTextBox() == nil then
+				dragToggle = true
+				dragStart = input.Position
+				startPos = Frame.Position
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragToggle = false
+					end
+				end)
+			end
+		end)
+		frame.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				dragInput = input
+			end
+		end)
+	end
+	
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragToggle then
+			updateInput(input)
+		end
+	end)
+end
+
+function UI:Make(WindowName)
+	local SearchbarTable = {Toggle = false, Hover = false, ThemeEnabled = false}
+	--warn(WindowName)
+	local globalSelf = {
+		Tabs = {},
+		TabsCount = 0
+	}
+	globalSelf.MacroUI = UIFolder.UI:Clone()
+	
+	local UIElements = UIFolder.UIElements
+	local AllElements = {}
+	
+	dragify(globalSelf.MacroUI.MainFrame)
+	
+	globalSelf.MacroUI.Parent = game.Players.LocalPlayer.PlayerGui
+	
+	local function getElementsCount(Name)
+		local count = 0
+		for i,_ in pairs(AllElements) do
+			if i:find(Name) then count = count + 1 end
+		end
+		return count
+	end
+	
+	function globalSelf:Tab(tabName)
+		self.TabsCount += 1
+		local TabData = {_ID = self.TabsCount, Active = false}
+		
+		TabData["_TabButton"] = UIElements.TabButton:Clone()
+		TabData["_TabButton"].Parent = self.MacroUI.MainFrame["_"].LeftFrame.TabList
+		TabData["_TabButton"].Title.Text = tabName
+		TabData["_TabButton"].Visible = true
+		
+		TabData["_TabContainer"] = UIElements.TabContainer:Clone()
+		TabData["_TabContainer"].Parent = self.MacroUI.MainFrame["_"].Containers
+		TabData["_TabContainer"].TabTitle.Text = tabName
+		fixScrolling(TabData["_TabContainer"].Container)
+		
+		TabData["_TabContainer"].Container.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			TabData["_TabContainer"].Container.CanvasSize = UDim2.new(0, 0, 0, 
+				TabData["_TabContainer"].Container.UIListLayout.AbsoluteContentSize.Y + TabData["_TabContainer"].Container.UIListLayout.Padding.Offset * (#TabData["_TabContainer"].Container:GetChildren() - 1))
+		end)
+		
+		function TabData:toggleSelection(state)
+			if state then
+				TweenService:Create(self["_TabButton"], TweenInfo.new(0.35), {BackgroundColor3 = Color3.fromRGB(43, 43, 43)}):Play()
+			else
+				TweenService:Create(self["_TabButton"], TweenInfo.new(0.35), {BackgroundColor3 = Color3.fromRGB(0,0,0)}):Play()
+			end
+		end
+		
+		function TabData:SetActive()
+			for _,tabData in pairs(globalSelf.Tabs) do
+				if tabData._ID == self._ID then
+					TweenService:Create(TabData["_TabButton"].LeftActiveFill, TweenInfo.new(0.1), {Size = UDim2.new(0, 8, 1, 0)}):Play()
+					TabData["_TabContainer"].Visible = true
+					self.Active = true
+					self:toggleSelection(true)
+				else
+					TweenService:Create(tabData["_TabButton"].LeftActiveFill, TweenInfo.new(0.1), {Size = UDim2.new(0, 0, 1, 0)}):Play()
+					tabData["_TabContainer"].Visible = false
+					tabData.Active = false
+					tabData:toggleSelection(false)
+				end
+			end
+		end
+		
+		table.insert(self.Tabs, TabData)
+		
+		if self.TabsCount <= 1 then
+			TabData:SetActive()
+		end
+		
+		TabData["_TabButton"].MouseEnter:Connect(function() 
+			TabData:toggleSelection(true)
+		end)
+		TabData["_TabButton"].MouseLeave:Connect(function()
+			if not TabData.Active then
+				TabData:toggleSelection(false)
+			end	
+		end)
+		
+		TabData["_TabButton"].MouseButton1Down:Connect(function() 
+			if not TabData.Active then 
+				TabData:SetActive()
+			end
+		end)
+		
+		function TabData:Label(Name)
+			Name = Name or "Label"
+			local Label = UIElements.Label:Clone()
+			Label.Parent = self["_TabContainer"].Container
+			Label.TextLabel.Text = Name
+			Label.Visible = true
+		end
+		
+		function TabData:Button(Name, ButtonText, Callback)
+			Name = Name or "Button"
+			local elName = Name.."_"..getElementsCount(Name)
+			AllElements[elName] = {Tag = "Button", Name = Name}
+			AllElements[elName].Frame = UIElements.Button:Clone()
+			
+			AllElements[elName].Frame.Parent = self["_TabContainer"].Container
+
+			AllElements[elName].Frame.TextLabel.Text = Name
+			AllElements[elName].Frame.TextButton.Text = ButtonText or ""
+			AllElements[elName].Frame.Visible = true
+			
+			AllElements[elName].Frame.TextButton.MouseButton1Click:Connect(function() 
+				xpcall(Callback, function(err) warn("[Error-1]:",err) end)
+			end)
+		end
+		
+		function TabData:Toggle(Name, callback)
+			Name = Name or "Toggle"
+			local elName = Name.."_"..getElementsCount(Name)
+			AllElements[elName] = {Tag = "Toggle", Name = Name, State = false}
+			local toggleTable = AllElements[elName]
+			
+			toggleTable.Frame = UIElements.Toggle:Clone()
+			toggleTable.Frame.TextLabel.Text = Name
+			toggleTable.Frame.Parent = self["_TabContainer"].Container
+			toggleTable.Frame.Visible = true
+			
+			local Callback = function()
+				xpcall(function() callback(AllElements[elName].State) end, function(err) warn("[Error-2]:",err) end)
+			end
+			
+			function toggleTable:Update()
+				if self.State == true then
+					TweenService:Create(self.Frame.ToggleButton, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+				else
+					TweenService:Create(self.Frame.ToggleButton, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
+				end
+			end
+			
+			function toggleTable:Set(state)
+				state = (state == true and true) or (state == false and false) or false
+				self.State = state
+				self:Update()
+				Callback()
+			end
+			
+			toggleTable.Frame.ToggleButton.MouseButton1Down:Connect(function()
+				toggleTable.State = not toggleTable.State
+				toggleTable:Update()
+				Callback()
+			end)
+			
+			return toggleTable
+		end
+		
+		function TabData:Input(Name, placeholder, callback)
+			Name = Name or "Input"
+			local elName = Name.."_"..getElementsCount(Name)
+			AllElements[elName] = {Tag = "Box", Name = Name, CurrentText = ""}
+			AllElements[elName].Frame = UIElements.Input:Clone()
+			AllElements[elName].Frame.TextLabel.Text = Name
+			AllElements[elName].Frame.TextBox.PlaceholderText = placeholder or ""
+			AllElements[elName].Frame.Parent = self["_TabContainer"].Container
+			AllElements[elName].Frame.Visible = true
+			
+			local Callback = function(newText) 
+				xpcall(function() callback(newText) end, function(err) warn("[Error-3]:",err) end)
+			end
+			
+			AllElements[elName].Frame.TextBox.FocusLost:Connect(function()
+				AllElements[elName].CurrentText = AllElements[elName].Frame.TextBox.Text
+				Callback(AllElements[elName].CurrentText)
+			end)
+		end
+		
+		function TabData:Slider(Name, callback, options)
+			print(Name)
+			Name = Name or "Slider"
+			options = options or {}
+			
+			local Min,Max = options.Min or 0, options.Max or 1
+			local Default,Precise = tonumber(options.Default) or 0, options.Precise or false
+			
+			if Default >= Max then 
+				Default = Max 
+			elseif Default <= Min then 
+				Default = Min 
+			end
+			
+			local elName
+			local tempText = string.gsub(Name, " %%", "")
+			elName = tempText.."_"..getElementsCount(tempText)
+			
+			AllElements[elName] = {Tag = "Slider", Name = Name, Min = Min, Max = Max, Default = Default, Precise = Precise, CurrentValue = Default or 0}
+			local SliderTable = AllElements[elName]
+			
+			SliderTable.Frame = UIElements.Slider:Clone()
+			SliderTable.Frame.TextLabel.Text = Name
+			SliderTable.Frame.CurrentValue.Text = tostring(Default)
+			SliderTable.Frame.Parent = self["_TabContainer"].Container
+			SliderTable.Frame.Visible = true
+			
+			local sliderListen = nil
+			
+			local function updateSlider(Value, Percentage)
+				TweenService:Create(SliderTable.Frame.CanvasGroup.Fill, TweenInfo.new(0.2, Enum.EasingStyle["Quint"], Enum.EasingDirection["Out"]), {Size = UDim2.new(Percentage, 0, 1, 0)}):Play()
+
+				if Precise then
+					SliderTable.Frame.CurrentValue.Text = tostring(math.round(Value*100)/100)
+					xpcall(callback, function(err) warn("[Error-4]:", err) end, Value)
+				else
+					local newVal = tostring(math.round(Value))
+					if SliderTable.Frame.CurrentValue.Text ~= newVal then
+						-- print("Changed")
+						SliderTable.Frame.CurrentValue.Text = newVal
+						xpcall(callback, function(err) warn("[Error-4]:", err) end, math.round(Value))
+					end
+				end
+			end
+			
+			SliderTable.Frame.SliderButton.MouseButton1Down:Connect(function()
+				sliderListen = RunService.RenderStepped:Connect(function()
+					local Mouse = Players.LocalPlayer:GetMouse()
+					local Percentage = math.clamp((Mouse.X - SliderTable.Frame.CanvasGroup.AbsolutePosition.X) / SliderTable.Frame.CanvasGroup.AbsoluteSize.X, 0, 1)
+					local Value = ((Max - Min) * Percentage) + Min
+
+					SliderTable.CurrentValue = Precise and math.round(Value*100)/100 or math.round(Value)
+
+					updateSlider(Value, Percentage)
+				end)
+			end)
+			
+			UserInputService.InputEnded:Connect(function(Input)
+				if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+					if sliderListen ~= nil then sliderListen:Disconnect() sliderListen = nil end
+				end
+			end)
+			
+			function SliderTable:Set(newValue)
+				if newValue == nil or not tonumber(newValue) then
+					newValue = Min
+				end
+				
+				if newValue >= Max then 
+					newValue = Max
+				elseif newValue <= Min then
+					newValue = Min
+				end
+				
+				local Percentage = math.clamp((newValue - Min) / (Max - Min), 0, 1)
+				local newValue = ((Max - Min) * Percentage) + Min
+				
+				self.CurrentValue = Precise and math.round(newValue*100)/100 or math.round(newValue)
+				updateSlider(newValue, Percentage)
+			end
+			
+			function SliderTable:Get()
+				return self.CurrentValue
+			end
+			
+			SliderTable:Set(Default)
+			
+			return SliderTable
+		end
+		
+		function TabData:Category(Name, withotSpacing)
+			Name = Name or "New Category"
+			local Category = UIElements.Category:Clone()
+			Category.TextLabel.Text = Name
+			Category.Visible = true
+			if not withotSpacing then Category.Size = UDim2.new(0.95,0,0,35) else Category.Size = UDim2.new(0.95,0,0,22) end
+			Category.Parent = self["_TabContainer"].Container
+				
+			return self
+		end
+		
+		function TabData:Dropdown(Name, Options, Callbacks) -- Options: ["Default", "Removable", "Multi"]
+			Name = Name or "New Dropdown"
+			Options = Options or {}
+			Options.Type = Options.Type or "Default"
+			local elName = Name.."_"..getElementsCount(Name)
+			AllElements[elName] = {Tag = "Dropdown", Name = Name}
+			local Dropdown = AllElements[elName]
+			
+			Dropdown.Data = Options.Options
+			Dropdown.CurrentData = {}
+			Dropdown.Selected = {}
+			Dropdown.dropdownActive = false
+			
+			Dropdown.Frame = UIElements.Dropdown:Clone()
+			local DropdownFrame = Dropdown.Frame
+			DropdownFrame.TextLabel.Text = Name
+			DropdownFrame.Visible = true
+			DropdownFrame.Parent = self["_TabContainer"].Container
+			
+			fixScrolling(DropdownFrame.DropdownContainer)			
+
+			DropdownFrame.DropdownContainer.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+				DropdownFrame["DropdownContainer"].CanvasSize = UDim2.new(0, 0, 0, 
+					DropdownFrame.DropdownContainer.UIListLayout.AbsoluteContentSize.Y + DropdownFrame.DropdownContainer.UIListLayout.Padding.Offset * (#DropdownFrame.DropdownContainer:GetChildren() - 1))
+			end)
+			
+			local DDX = DropdownFrame.Size.X
+			local DDY = DropdownFrame.Size.Y
+			
+			DropdownFrame["DropdownInteractable"].MouseButton1Click:Connect(function()
+				Dropdown.dropdownActive = not Dropdown.dropdownActive
+
+				if Dropdown.dropdownActive then
+					TweenService:Create(DropdownFrame, TweenInfo.new(0.2, Enum.EasingStyle["Quint"], Enum.EasingDirection["Out"]), {Size = UDim2.new(DDX.Scale, DDX.Offset, 0, 122)}):Play()
+				elseif not Dropdown.dropdownActive then
+					TweenService:Create(DropdownFrame, TweenInfo.new(0.2, Enum.EasingStyle["Quint"], Enum.EasingDirection["Out"]), {Size = UDim2.new(DDX.Scale, DDX.Offset, 0, 22)}):Play()
+				end
+			end)
+			
+			
+			
+			if Options.Type == "Removable" then
+				Dropdown["_UpdateElements"] = function()
+					for _,Button in pairs(DropdownFrame["DropdownContainer"]:GetChildren()) do
+						if not Button:IsA("TextButton") then continue end
+						if not table.find(AllElements[elName].CurrentData, Button.Text) then
+							print(Button.Text,"removed\n")
+							Button:Destroy()
+						end
+					end
+				end
+				Dropdown["_SelectOption"] = function(option) 
+					local index = table.find(AllElements[elName].CurrentData, option)
+					
+					if index then 
+						table.remove(AllElements[elName].CurrentData, index)
+						--warn(1)
+						AllElements[elName]["_UpdateElements"]()
+						pcall(Callbacks["onRemove"], option)
+					end
+				end
+				
+			elseif Options.Type == "Multi" then
+				Dropdown["_UpdateElements"] = function()
+					for _,Button in pairs(DropdownFrame["DropdownContainer"]:GetChildren()) do
+						if not Button:IsA("TextButton") then continue end
+						if table.find(AllElements[elName].Selected, Button.Text) then
+							Button.BackgroundTransparency = 0
+						else
+							Button.BackgroundTransparency = 1
+						end
+					end
+				end
+				Dropdown["_SelectOption"] = function(option)
+					local isSelected = table.find(AllElements[elName].Selected, option)
+					if isSelected then
+						table.remove(AllElements[elName].Selected, isSelected)
+						AllElements[elName]["_UpdateElements"]()
+						pcall(Callbacks["onDeselect"], option)
+					else
+						table.insert(AllElements[elName].Selected, option)
+						AllElements[elName]["_UpdateElements"]()
+						pcall(Callbacks["onSelect"], option)
+					end
+				end
+				
+			else
+				Dropdown["_UpdateElements"] = function()
+					for _,Button in pairs(DropdownFrame["DropdownContainer"]:GetChildren()) do
+						if not Button:IsA("TextButton") then continue end
+						if table.find(AllElements[elName].Selected, Button.Text) then
+							Button.BackgroundTransparency = 0
+						else
+							Button.BackgroundTransparency = 1
+						end
+					end
+				end
+				Dropdown["_SelectOption"] = function(option) 
+					AllElements[elName].Selected[1] = option
+					DropdownFrame.Selected.Text = option
+					AllElements[elName]["_UpdateElements"]()
+					AllElements[elName].dropdownActive = false
+					TweenService:Create(DropdownFrame, TweenInfo.new(0.2, Enum.EasingStyle["Quint"], Enum.EasingDirection["Out"]), {Size = UDim2.new(DDX.Scale, DDX.Offset, 0, 22)}):Play()
+					pcall(Callbacks["onSelect"], option)
+				end
+			end
+			
+			local function Setup(Data)
+				for _, Value in pairs(Data) do
+					local Button = Instance.new("TextButton", DropdownFrame["DropdownContainer"])
+					Button.BackgroundTransparency = 1
+					Button.BackgroundColor3 = Color3.fromRGB(62, 69, 136)
+					Button.BorderSizePixel = 0
+					Button.Font = Enum.Font["Gotham"]
+					Button.AutoButtonColor = false
+					Button.Name = "DropdownOption"
+					Button.Size = UDim2.new(0.8, 0, 0, 20)
+					Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+					Button.TextSize = 10
+					local UICorner = Instance.new("UICorner", Button)
+					UICorner.CornerRadius = UDim.new(0,5)
+
+					if type(Value) == "userdata" then
+						Button.Text = Value.Name
+					else
+						Button.Text = tostring(Value)
+					end
+
+					Button.MouseButton1Down:Connect(function()
+						Dropdown["_SelectOption"](Value)
+					end)
+				end
+			end
+			
+			local function Clear()
+				for _, Button in ipairs(DropdownFrame["DropdownContainer"]:GetChildren()) do
+					if Button:IsA("TextButton") and Button.Name == "DropdownOption" then
+						Button:Destroy()
+					end
+				end
+			end
+
+			for _, DataValue in ipairs(Dropdown.Data) do
+				table.insert(Dropdown.CurrentData, DataValue)
+			end
+			
+			Setup(Dropdown.CurrentData)
+			
+			function Dropdown:Get()
+				return self.Selected
+			end
+			
+			function Dropdown:Select(Value)
+				Dropdown["_SelectOption"](Value)
+			end
+			
+			function Dropdown:Update(newData)
+				if type(newData) ~= "table" then
+					newData = {newData}
+				end
+				
+				table.clear(self.CurrentData)
+				Clear()
+				for _, DataValue in ipairs(newData) do
+					table.insert(self.CurrentData, DataValue)
+				end
+				
+				Setup(self.CurrentData)
+				self["_UpdateElements"]()
+			end
+			
+			return Dropdown
+		end
+		
+		return TabData
+	end
+
+	return globalSelf
+end
+
+return UI
